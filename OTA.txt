@@ -1,0 +1,160 @@
+升级包文件结构 (update.zip):
+┌─────────────────────────────────────────────────────────────┐
+│ 0x00000000 - 0x001FFFFF (0-2MB): MetaData (元数据)        │
+│  ├─ MAGIC (16字节)                    = "ROX_IDCU"       │
+│  ├─ PACKAGE_NAME (64字节)             = "IDCU_V1.0.0"   │
+│  ├─ BUILD_TIME (32字节)               = "20241225_1430" │
+│  ├─ BASE_VERSION (32字节)              = "V1.0.0"        │
+│  ├─ NEW_VERSION (32字节)               = "V1.1.0"        │
+│  ├─ UPDATE_TYPE (4字节)                = 1 (FULL) / 2 (DELTA) │
+│  ├─ ALLOW_DEGRADE (4字节)              = 0 / 1           │
+│  ├─ UPDATE_OBJECTS (4字节)             = MPU|MCU|PANEL  │
+│  ├─ IS_SIGNATURE (4字节)               = 0 / 1           │
+│  ├─ PARTITION_COUNT (4字节)             = 分区数量        │
+│  ├─ CHUNK_COUNT (4字节)                = 块数量          │
+│  ├─ MANIFEST_SIZE (8字节)              = 清单大小        │
+│  └─ 保留字段 (约2MB-176字节)                               │
+├─────────────────────────────────────────────────────────────┤
+│ 0x00200000 - 0x0027FFFF (2MB-2.5MB): PartitionInfo       │
+│  ├─ 分区1信息 (48字节)                                    │
+│  │  ├─ 分区名称 (32字节)              = "system"        │
+│  │  ├─ 文件系统类型 (8字节)            = "ext4"          │
+│  │  ├─ 分区ID (4字节)                  = 0x01            │
+│  │  ├─ 块数量 (4字节)                  = 1024            │
+│  │  └─ 分区哈希 (64字节)               = SHA256          │
+│  ├─ 分区2信息 (48字节)                                    │
+│  └─ ...多个分区重复                                       │
+├─────────────────────────────────────────────────────────────┤
+│ 0x00280000 - 0x02000000 (2.5MB-32MB): Manifest (清单)     │
+│  ├─ 分区1清单                                              │
+│  │  ├─ 分区名称 (32字节)               = "system"        │
+│  │  ├─ 分区ID (4字节)                  = 0x01            │
+│  │  ├─ 文件系统类型 (8字节)            = "ext4"          │
+│  │  ├─ 基础大小 (8字节)                = 0x1000000       │
+│  │  ├─ 新大小 (8字节)                  = 0x1200000       │
+│  │  ├─ 基础哈希 (64字节)               = SHA256          │
+│  │  ├─ 新哈希 (64字节)                 = SHA256          │
+│  │  ├─ 块信息数组                                          │
+│  │  │  ├─ ChunkID (4字节)              = 1,2,3...      │
+│  │  │  ├─ 差分算法 (4字节)              = BSDIFF/MOVE    │
+│  │  │  ├─ 补丁偏移 (8字节)              = 文件偏移      │
+│  │  │  ├─ 补丁大小 (8字节)              = 补丁长度      │
+│  │  │  ├─ 基础块哈希 (64字节)           = SHA256        │
+│  │  │  ├─ 新块哈希 (64字节)              = SHA256        │
+│  │  │  └─ 补丁块哈希 (64字节)            = SHA256        │
+│  └─ ...多个分区和块重复                                    │
+├─────────────────────────────────────────────────────────────┤
+│ 0x02000000 - 0x02100000 (32MB-33MB): 公钥 (RSA Public Key)│
+│  └─ RSA-2048 公钥 (约256字节)                            │
+├─────────────────────────────────────────────────────────────┤
+│ 0x02100000 - 0x02200000 (33MB-34MB): 私钥 (RSA Private Key)│
+│  └─ RSA-2048 私钥 (约256字节)                             │
+├─────────────────────────────────────────────────────────────┤
+│ 0x02200000 - 结尾: 签名与数据                              │
+│  ├─ METADATA_SIGNATURE (128字节)     = RSA签名           │
+│  ├─ 实际补丁数据                                          │
+│  │  ├─ system.bsdiff.patch            = 系统分区补丁     │
+│  │  ├─ boot.img                        = Boot镜像       │
+│  │  ├─ mcu_app.bin                     = MCU应用        │
+│  │  ├─ mcu_boot.bin                    = MCU Bootloader │
+│  │  ├─ panel_central.bin               = 中控屏固件     │
+│  │  └─ panel_icu.bin                   = 仪表屏固件     │
+│  └─ 填充数据 (对齐到块边界)                               │
+└─────────────────────────────────────────────────────────────┘
+🔍 关键结构体定义
+1. 元数据结构 (UpdateMetaDataInfo)
+
+cpp
+struct UpdateMetaDataInfo {
+    CHAR magic[16];                    // "ROX_IDCU" - 魔数
+    CHAR version[32];                  // 版本号
+    UINT32 partitionCount;             // 分区数量
+    UINT32 chunkCount;                 // 块数量
+    LONG manifestsize;                 // 清单大小
+    ManifestData manifest;             // 清单数据
+    LONG metadataSize;                 // 元数据大小
+    CHAR metaDataHash[32];             // SHA256哈希
+    LONG metadataSignSize;             // 签名大小
+    CHAR metaDataSignature[128+1];     // RSA签名
+};
+2. 分区信息结构 (PartitionRaw)
+
+cpp
+struct PartitionRaw {
+    CHAR name[32];                     // 分区名称
+    CHAR fsType[8];                    // 文件系统类型
+    INT32 id;                          // 分区ID
+    INT32 blockCount;                  // 块数量
+    CHAR hash[64+1];                   // 分区哈希
+    size_t partitionSize;              // 分区大小（全量）
+    size_t partitionBaseSize;          // 基础大小（差分）
+    size_t partitionNewSize;           // 新大小（差分）
+    CHAR hashOfBase[64+1];             // 基础哈希
+    std::vector<ChunkInfo> chunks;     // 块信息数组
+};
+3. 块信息结构 (ChunkInfo)
+
+cpp
+struct ChunkInfo {
+    INT32 chunkId;                     // 块ID
+    UPDATEDELTAALGORITHM diffAlgorithm; // 差分算法
+    LONG patchOffset;                  // 补丁偏移
+    LONG patchSize;                    // 补丁大小
+    CHAR hashOfBase[64+1];             // 基础哈希
+    CHAR hashOfNew[64+1];              // 新哈希
+    CHAR hashOfPatch[64+1];            // 补丁哈希
+};
+📂 解压后的目录结构
+当升级包被解压到 /update/ota/package/extra/ 后：
+
+
+plainText
+/update/ota/package/extra/
+├── IDCU_FOTA.json              # 配置文件
+├── ca2b_partition.json         # 分区配置
+├── payload.bin                 # 主要数据载荷
+├── MPU/                        # MPU升级文件
+│   ├── system.img             # 系统镜像
+│   ├── boot.img               # Boot镜像  
+│   ├── vendor.img             # Vendor镜像
+│   └── oem.img                # OEM镜像
+├── MCU/                        # MCU升级文件
+│   ├── mcu_app.bin            # MCU应用固件
+│   ├── mcu_boot.bin           # MCU Bootloader
+│   └── mcu_calib.bin          # MCU校准数据
+└── PANEL/                      # 面板升级文件
+    ├── central_update.bin     # 中控屏固件
+    ├── instrument_update.bin  # 仪表屏固件
+    ├── R11MCE-1_CentralScreen_TP.bin  # 中控屏TP
+    └── R11MCE-1_RCS_TP.bin    # 吸顶屏TP
+🔐 安全验证流程
+
+cpp
+// 1. 魔数验证
+if (memcmp(mMeta.magic, "ROX_IDCU", MAGIC_LENGTH) != 0) {
+    return PACKAGE_VERIFY_MAGIC_ERROR;
+}
+
+// 2. 版本兼容性检查  
+if (!isVersionCompatible(mMeta.version)) {
+    return PACKAGE_VERIFY_VERSION_ERROR;
+}
+
+// 3. 元数据哈希验证
+SHA256((UCHAR*)&mMeta, metadataSize, hash);
+if (memcmp(hash, mMeta.metaDataHash, SHA256_DIGEST_LENGTH) != 0) {
+    return PACKAGE_VERIFY_HASH_ERROR;
+}
+
+// 4. RSA签名验证
+if (!RSA_verify(mMeta.metaDataSignature, mMeta.metaDataHash)) {
+    return PACKAGE_VERIFY_SIGNATURE_ERROR;
+}
+🎯 关键设计特点
+分层结构：元数据→分区信息→清单→实际数据
+安全验证：多重哈希+RSA签名保护
+差分支持：支持BSDIFF等差分算法，节省空间
+多设备支持：同时支持MPU/MCU/Panel升级
+断点续传：支持升级中断后的恢复
+回滚机制：保留原始数据，支持版本回滚
+这种结构设计确保了OTA升级的安全性、可靠性和效率，是汽车电子系统升级的标准实现方案。
